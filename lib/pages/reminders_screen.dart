@@ -1,12 +1,12 @@
-
-
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:intl/intl.dart'; // For date and currency formatting
+import 'package:intl/intl.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 class Reminders extends StatefulWidget {
-  final String uid; // User's UID
+  final String uid;
 
   const Reminders({Key? key, required this.uid}) : super(key: key);
 
@@ -22,27 +22,38 @@ class _RemindersState extends State<Reminders> {
       TextEditingController();
   DateTime? _selectedDate;
   List<Map<String, dynamic>> _reminders = [];
-  String? userId; // Add userId
+  String? userId;
 
   @override
   void initState() {
     super.initState();
-    userId =
-        widget.uid; // Assign userId with the UID passed from Reminders widget
+    userId = widget.uid;
+
+    tz.initializeTimeZones(); // Initialize timezone
+
     flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
     var initializationSettingsAndroid =
         const AndroidInitializationSettings('app_icon');
-    var initializationSettings =
-        InitializationSettings(android: initializationSettingsAndroid);
+    var initializationSettingsDarwin = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    var initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
+    );
+
     flutterLocalNotificationsPlugin.initialize(initializationSettings);
     _loadReminders();
   }
 
-  // Load and sort reminders, and delete expired ones
   Future<void> _loadReminders() async {
     final snapshot = await FirebaseFirestore.instance
         .collection('reminders')
-        .where('uid', isEqualTo: userId) // Filter by user's UID
+        .where('uid', isEqualTo: userId)
         .get();
 
     List<Map<String, dynamic>> reminders = snapshot.docs.map((doc) {
@@ -52,7 +63,6 @@ class _RemindersState extends State<Reminders> {
       };
     }).toList();
 
-    // Remove expired reminders
     for (var reminder in reminders) {
       DateTime reminderDate = (reminder['date'] as Timestamp).toDate();
       if (reminderDate.isBefore(DateTime.now())) {
@@ -63,13 +73,11 @@ class _RemindersState extends State<Reminders> {
       }
     }
 
-    // Reload the non-expired reminders
     reminders = reminders
         .where((reminder) =>
             (reminder['date'] as Timestamp).toDate().isAfter(DateTime.now()))
         .toList();
 
-    // Sort reminders by date
     reminders.sort((a, b) => (a['date'] as Timestamp)
         .toDate()
         .compareTo((b['date'] as Timestamp).toDate()));
@@ -79,24 +87,30 @@ class _RemindersState extends State<Reminders> {
     });
   }
 
-  // Function to show notification
-  Future<void> _showNotification(String title, String body) async {
+  Future<void> _scheduleNotification(
+      String title, String body, DateTime scheduledDate) async {
     var androidDetails = const AndroidNotificationDetails(
-      'channelId',
-      'channelName',
-      importance: Importance.high,
+      'reminder_channel',
+      'Reminders',
+      importance: Importance.max,
+      priority: Priority.high,
     );
+
     var notificationDetails = NotificationDetails(android: androidDetails);
 
-    await flutterLocalNotificationsPlugin.show(
-      0,
+    await flutterLocalNotificationsPlugin.zonedSchedule(
+      scheduledDate.millisecondsSinceEpoch ~/ 1000,
       title,
       body,
+      tz.TZDateTime.from(scheduledDate, tz.local),
       notificationDetails,
+      androidAllowWhileIdle: true,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+      matchDateTimeComponents: DateTimeComponents.dateAndTime,
     );
   }
 
-  // Set or update reminder
   Future<void> _setReminder({String? id}) async {
     final reminderTitle = _reminderTitleController.text;
     final reminderAmount = _reminderAmountController.text;
@@ -109,7 +123,7 @@ class _RemindersState extends State<Reminders> {
         'title': reminderTitle,
         'amount': reminderAmount,
         'date': _selectedDate,
-        'uid': userId, // Add user's UID here
+        'uid': userId,
       };
 
       if (id == null) {
@@ -123,7 +137,12 @@ class _RemindersState extends State<Reminders> {
             .update(reminderData);
       }
 
-      _showNotification(reminderTitle, 'Amount: $reminderAmount');
+      await _scheduleNotification(
+        reminderTitle,
+        'Amount: ₹$reminderAmount',
+        _selectedDate!,
+      );
+
       _reminderTitleController.clear();
       _reminderAmountController.clear();
       _selectedDate = null;
@@ -209,8 +228,8 @@ class _RemindersState extends State<Reminders> {
   Future<void> _pickDate() async {
     DateTime? pickedDate = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(), // Set initial date to today's date
-      firstDate: DateTime.now(), // First date is today's date
+      initialDate: DateTime.now(),
+      firstDate: DateTime.now(),
       lastDate: DateTime(2100),
     );
     if (pickedDate != null && pickedDate != _selectedDate) {
@@ -236,31 +255,42 @@ class _RemindersState extends State<Reminders> {
         title: const Text('Reminders', style: TextStyle(color: Colors.white)),
         backgroundColor: const Color(0xFF6200EA),
       ),
-      body: ListView.builder(
-        itemCount: _reminders.length,
-        itemBuilder: (context, index) {
-          final reminder = _reminders[index];
-          return Card(
-            margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            elevation: 5,
-            child: ListTile(
-              title: Text(reminder['title']),
-              subtitle: Text(
-                  'Amount: ${NumberFormat.currency(symbol: '₹').format(int.parse(reminder['amount']))}\nDate: ${DateFormat.yMMMd().format((reminder['date'] as Timestamp).toDate())}'),
-              trailing: IconButton(
-                icon: const Icon(Icons.edit),
-                onPressed: () => _editReminder(index),
+      body: Padding(
+        padding: const EdgeInsets.all(8.0), // Space around the entire list
+        child: ListView.builder(
+          itemCount: _reminders.length,
+          itemBuilder: (context, index) {
+            final reminder = _reminders[index];
+            return Card(
+              margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              elevation: 5,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+                child: ListTile(
+                  title: Text(
+                    reminder['title'],
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold), // Bold title
+                  ),
+                  subtitle: Text(
+                    'Amount: ${NumberFormat.currency(symbol: '₹').format(int.parse(reminder['amount']))}\nDate: ${DateFormat.yMMMd().format((reminder['date'] as Timestamp).toDate())}',
+                  ),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.edit),
+                    onPressed: () => _editReminder(index),
+                  ),
+                  onLongPress: () => _deleteReminder(reminder['id']),
+                ),
               ),
-              onLongPress: () => _deleteReminder(reminder['id']),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _showAddReminderDialog(context, false, null),
-        backgroundColor:
-            const Color(0xFF6200EA), // Set the button background color
-        child: const Icon(Icons.add, color: Colors.white), // Set the icon color
+        backgroundColor: const Color(0xFF6200EA),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
