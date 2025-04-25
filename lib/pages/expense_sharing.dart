@@ -164,11 +164,11 @@ class _ExpenseSharingPageState extends State<ExpenseSharingPage> {
               ],
             ),
             SizedBox(height: 20),
-            Text('Total Expense: \$${totalAmount.toStringAsFixed(2)}'),
+            Text('Total Expense: ₹${totalAmount.toStringAsFixed(2)}'),
             Text('Number of Members: $memberCount'),
-            Text('Budget: \$${budget.toStringAsFixed(2)}'),
+            Text('Budget: ₹${budget.toStringAsFixed(2)}'),
             Text(
-              'Remaining Budget: \$${(budget - totalAmount).toStringAsFixed(2)}',
+              'Remaining Budget: ₹${(budget - totalAmount).toStringAsFixed(2)}',
             ),
           ],
         ),
@@ -196,9 +196,9 @@ class _ExpenseSharingPageState extends State<ExpenseSharingPage> {
               leading: Icon(Icons.person, color: Colors.blue),
               title: Text('$name'),
               subtitle:
-                  Text('Contribution: \$${contribution.toStringAsFixed(2)}'),
+                  Text('Contribution: ₹${contribution.toStringAsFixed(2)}'),
               trailing: Text(
-                'Balance: \$${balance.toStringAsFixed(2)}',
+                'Balance: ₹${balance.toStringAsFixed(2)}',
                 style: TextStyle(color: Colors.red),
               ),
             );
@@ -291,7 +291,7 @@ class _ExpenseSharingPageState extends State<ExpenseSharingPage> {
                     Expanded(
                       flex: 2,
                       child: Text(
-                        'Share: \$${_calculateSplit(totalAmount, uid).toStringAsFixed(2)}',
+                        'Share: ₹${_calculateSplit(totalAmount, uid).toStringAsFixed(2)}',
                         style: TextStyle(color: Colors.orange),
                       ),
                     ),
